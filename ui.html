@@ -1,0 +1,262 @@
+<style>
+  :root {
+    --text: var(--figma-color-text, #333333);
+    --bg: var(--figma-color-bg, #ffffff);
+    --primary-gradient: linear-gradient(135deg, #FF6300 0%, #E90F6F 100%);
+    --primary-gradient-hover: linear-gradient(135deg, #ff7926 0%, #f62983 100%);
+    --bg-secondary: var(--figma-color-bg-secondary, #F5F5F5);
+    --error: var(--figma-color-text-danger, #F24822);
+  }
+  body {
+    font-family: 'Inter', sans-serif;
+    margin: 0;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background-color: var(--bg);
+    color: var(--text);
+    box-sizing: border-box;
+  }
+  .container {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  h2 {
+    font-size: 18px;
+    margin-top: 0;
+    margin-bottom: 8px;
+    font-weight: 600;
+    text-align: center;
+  }
+  p {
+    font-size: 13px;
+    text-align: center;
+    margin-bottom: 8px;
+    opacity: 0.8;
+  }
+  .timer {
+    font-size: 32px;
+    font-weight: 800;
+    text-align: center;
+    margin: 12px 0 16px 0;
+    background: var(--primary-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-variant-numeric: tabular-nums;
+  }
+  #alert-msg {
+    font-size: 12px;
+    margin-bottom: 16px;
+    text-align: center;
+    font-weight: 500;
+    min-height: 16px;
+  }
+  .button-group {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    margin-bottom: 12px;
+  }
+  button {
+    background: var(--primary-gradient);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 14px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    width: 100%;
+    box-shadow: 0 4px 12px rgba(233, 15, 111, 0.25);
+  }
+  button:hover:not(:disabled) {
+    background: var(--primary-gradient-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(233, 15, 111, 0.35);
+  }
+  button:active:not(:disabled) {
+    transform: translateY(1px);
+    box-shadow: 0 2px 8px rgba(233, 15, 111, 0.2);
+  }
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+  #stop {
+    background-color: var(--error);
+    display: none;
+  }
+  #stop:hover {
+    background-color: #d13012;
+  }
+</style>
+
+<div class="container">
+  <h2>Layers Counter</h2>
+  <p>Analyse immédiatement et en continu la page courante active ou la sélection de groupe.</p>
+
+  <div id="timer" class="timer" style="display: none;">00:00</div>
+  <div id="alert-msg"></div>
+
+  <div class="button-group">
+    <button id="count">Count Frames</button>
+    <button id="stop">Stop</button>
+  </div>
+</div>
+
+<script>
+  let timerInterval = null;
+  let startTime = 0;
+
+  const countBtn = document.getElementById('count');
+  const stopBtn = document.getElementById('stop');
+  const alertMsg = document.getElementById('alert-msg');
+  const timerEl = document.getElementById('timer');
+
+  function updateTimer() {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+    const secs = String(elapsed % 60).padStart(2, '0');
+    timerEl.textContent = `${mins}:${secs}`;
+  }
+
+  function startCounting() {
+    // UI states
+    countBtn.style.display = 'none';
+    stopBtn.style.display = 'block';
+    timerEl.style.display = 'block';
+    alertMsg.style.color = 'var(--text)';
+    alertMsg.textContent = 'Calcul en cours...';
+    
+    // Timer init
+    startTime = Date.now();
+    timerEl.textContent = "00:00";
+    clearInterval(timerInterval);
+    timerInterval = setInterval(updateTimer, 1000);
+    
+    // Send command
+    parent.postMessage({ pluginMessage: { type: 'count-layers' } }, '*');
+  }
+
+  function stopCounting() {
+    parent.postMessage({ pluginMessage: { type: 'cancel-count' } }, '*');
+    resetUI();
+    alertMsg.style.color = 'var(--error)';
+    alertMsg.textContent = 'Calcul stoppé par l\'utilisateur.';
+  }
+
+  function resetUI() {
+    clearInterval(timerInterval);
+    countBtn.style.display = 'block';
+    stopBtn.style.display = 'none';
+    countBtn.textContent = 'Retry (Count Frames)';
+    countBtn.disabled = false;
+  }
+
+  countBtn.onclick = startCounting;
+  stopBtn.onclick = stopCounting;
+
+  onmessage = (event) => {
+    const msg = event.data.pluginMessage;
+
+    if (msg.type === 'count-finished') {
+      resetUI();
+      alertMsg.style.color = 'var(--figma-color-text-success, #14a055)';
+      alertMsg.textContent = `Succès! ${msg.count} frame(s) comptée(s).`;
+      fireConfetti();
+    }
+
+    if (msg.type === 'count-error') {
+      resetUI();
+      alertMsg.style.color = 'var(--error)';
+      alertMsg.textContent = `Erreur : ${msg.error}`;
+    }
+
+    if (msg.type === 'debug') {
+      if(alertMsg.style.color !== 'var(--error)') {
+        alertMsg.style.color = 'var(--text)';
+        alertMsg.textContent = msg.msg;
+      }
+    }
+  };
+
+  // NOUVEAUTÉ : Animation Confetti de Succès Premium
+  function fireConfetti() {
+    const duration = 2500;
+    const end = Date.now() + duration;
+
+    const canvas = document.createElement('canvas');
+    canvas.style.position = 'fixed';
+    canvas.style.top = '0';
+    canvas.style.left = '0';
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    canvas.style.pointerEvents = 'none';
+    canvas.style.zIndex = '9999';
+    document.body.appendChild(canvas);
+
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    // Palette : [Orange Brand, Pink Brand, Success Green, Secondary Pink, Secondary Orange]
+    const colors = ['#FF6300', '#E90F6F', '#14a055', '#ff94ba', '#ffb070'];
+    const confetti = [];
+
+    for (let i = 0; i < 70; i++) {
+      confetti.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height - canvas.height,
+        r: Math.random() * 5 + 3,
+        dx: Math.random() * 2 - 1,
+        dy: Math.random() * 3 + 2,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        tilt: Math.floor(Math.random() * 10) - 10,
+        tiltAngle: 0,
+        tiltAngleInc: (Math.random() * 0.07) + 0.05
+      });
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      let active = false;
+
+      for (let i = 0; i < confetti.length; i++) {
+        const c = confetti[i];
+        c.tiltAngle += c.tiltAngleInc;
+        c.y += (Math.cos(c.tiltAngle) + 1 + c.dy) / 2;
+        c.x += Math.sin(c.tiltAngle) * 2;
+
+        ctx.beginPath();
+        ctx.lineWidth = c.r;
+        ctx.strokeStyle = c.color;
+        ctx.moveTo(c.x + c.tilt + c.r, c.y);
+        ctx.lineTo(c.x + c.tilt, c.y + c.tilt + c.r);
+        ctx.stroke();
+
+        if (c.y <= canvas.height) active = true;
+      }
+
+      if (Date.now() < end || active) {
+        requestAnimationFrame(render);
+      } else {
+        canvas.remove();
+      }
+    }
+
+    render();
+  }
+
+  // NOUVEAUTÉ : ResizeObserver pour adapter dynamiquement la hauteur de Figma au contenu
+  const observer = new ResizeObserver(() => {
+    const targetHeight = Math.ceil(document.documentElement.scrollHeight);
+    parent.postMessage({ pluginMessage: { type: 'resize', height: targetHeight } }, '*');
+  });
+  observer.observe(document.body);
+</script>
